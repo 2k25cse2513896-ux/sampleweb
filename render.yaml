@@ -19,6 +19,8 @@ services:
         generateValue: true
       - key: ADMIN_PASSWORD
         sync: false
+      - key: SEED_TOKEN
+        sync: false
       - key: DATABASE_URL
         sync: false
       - key: CORS_ORIGINS

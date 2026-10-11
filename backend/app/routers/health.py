@@ -1,10 +1,11 @@
 """Liveness probe used by Docker and hosts."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.core.startup_state import get_startup_state
 
 router = APIRouter(tags=["health"])
 
@@ -16,6 +17,9 @@ def health() -> dict[str, str]:
 
 @router.get("/api/ready")
 def ready(db: Session = Depends(get_db)) -> dict[str, str]:
-    """Readiness probe: the process is ready only when the database responds."""
+    """Readiness probe: the process is ready only after startup seeding completes."""
     db.execute(text("SELECT 1"))
-    return {"status": "ready"}
+    state = get_startup_state()
+    if state["status"] != "ready":
+        raise HTTPException(status_code=503, detail=state)
+    return state

@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     demo_mode: bool = True
     seed_on_startup: bool = True
     admin_password: str = ""
+    seed_token: str = ""
     secret_key: str = "change-me-to-a-long-random-string"
     access_token_minutes: int = 30
     refresh_token_days: int = 7

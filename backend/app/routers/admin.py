@@ -1,11 +1,12 @@
 """Admin dashboard and management endpoints used by the responsive admin shell."""
 
 import csv
+import hmac
 import io
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Header, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
@@ -16,10 +17,42 @@ from app.models.entities import AuditLog, Coupon, Enquiry, FlashDeal, Order, Pro
 from app.schemas.commerce import AssistantIn, CouponIn, FlashDealIn, StatusUpdate, StockIn, UserIn
 from app.services.commerce import expire_reservations, parse_assistant_text, product_card, product_price
 from app.core.security import hash_password
-from app.services.seed import reset_and_seed
+from app.core.config import get_settings
+from app.core.startup_state import set_startup_state
+from app.services.seed import reset_and_seed, seed_if_empty
 from app.services.stock import apply_stock_change
 
 router = APIRouter(tags=["admin"])
+
+
+@router.post("/api/admin/seed")
+def recover_seed(
+    x_seed_token: str = Header(default="", alias="X-Seed-Token"),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Safely recover an empty catalogue with a private token."""
+    settings = get_settings()
+    expected_token = settings.seed_token
+    if expected_token == "":
+        expected_token = settings.admin_password
+    if expected_token == "" or not hmac.compare_digest(x_seed_token, expected_token):
+        raise AppError("unauthorized", "A valid seed token is required.", 401)
+    set_startup_state("seeding", "Recovery seed is in progress.")
+    try:
+        inserted = seed_if_empty(db, settings.admin_password)
+        if inserted is None:
+            set_startup_state("seeding", "Another seed is in progress.")
+            raise AppError("seed_busy", "Another seed is already in progress.", 409)
+        set_startup_state("ready", "Database is ready.")
+        status = "seeded"
+        if inserted == 0:
+            status = "skipped"
+        return {"status": status, "inserted_products": inserted}
+    except AppError:
+        raise
+    except Exception:
+        set_startup_state("failed", "Recovery seed failed.")
+        raise
 
 
 @router.get("/api/admin/dashboard")

@@ -39,13 +39,24 @@ Do not commit `.env`, database passwords, API keys, or customer data. The reposi
    - `DATABASE_URL`: the Neon connection string.
    - `CORS_ORIGINS`: temporarily use `https://example.com`; replace it after the frontend URL is known.
    - `ADMIN_PASSWORD`: a new private password with at least 12 characters. This is used only when the empty production database receives its one-time seeded admin.
+   - `SEED_TOKEN`: optional separate private token for the recovery endpoint. If omitted, the recovery endpoint accepts `ADMIN_PASSWORD` instead.
 5. Keep `SEED_ON_STARTUP=true` for the first deploy. Set it to `false` only if you want to disable the empty-database seed completely.
 6. Wait for the deploy, then open:
    - `https://YOUR-API.onrender.com/api/health`
    - `https://YOUR-API.onrender.com/api/ready`
 7. Both endpoints must respond successfully before deploying the frontend.
 
-The Render start command runs Alembic migrations before Uvicorn starts. With `SEED_ON_STARTUP=true`, startup checks the `products` table after migrations and seeds only when it is empty. A PostgreSQL advisory lock makes simultaneous instance starts safe; an existing catalogue is never wiped or overwritten. `DEMO_MODE=false` still prevents the old demo-only normalization path from changing existing production rows.
+The Render start command runs Alembic migrations before Uvicorn starts. With `SEED_ON_STARTUP=true`, the API starts its liveness endpoint immediately, then checks the `products` table after migrations and seeds only when it is empty. `/api/ready` returns 503 while this bounded background step is running and returns 200 when it is complete. A PostgreSQL advisory lock makes simultaneous instance starts safe; an existing catalogue is never wiped or overwritten. `DEMO_MODE=false` still prevents the old demo-only normalization path from changing existing production rows. Logs contain `seed: checking`, `seed: skipped because ...`, `seed: inserted N products`, or `seed: FAILED ...` without printing database URLs or passwords.
+
+### Empty-database recovery
+
+If a deployment is healthy but `/api/products` still reports `total: 0`, an admin can call the one-time recovery endpoint. It is protected by `SEED_TOKEN`, or by `ADMIN_PASSWORD` when no separate token is configured. It only inserts the catalogue when the `products` table is empty and never resets existing rows:
+
+```powershell
+curl.exe -X POST https://YOUR-API.onrender.com/api/admin/seed -H "X-Seed-Token: YOUR_PRIVATE_TOKEN"
+```
+
+Expected output is `{"status":"seeded","inserted_products":60}` on the first successful recovery and `{"status":"skipped","inserted_products":0}` afterwards.
 
 ## 4. Deploy the frontend on Vercel
 

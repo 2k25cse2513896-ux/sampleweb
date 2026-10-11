@@ -4,8 +4,11 @@ from io import BytesIO
 
 from fastapi.testclient import TestClient
 from PIL import Image
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from app.core.db import SessionLocal
+from app.models.base import Base
 from app.models.entities import Product
 from app.services.seed import seed_if_empty
 
@@ -42,6 +45,26 @@ def test_startup_seed_is_idempotent(client: TestClient) -> None:
         assert after == before
     finally:
         db.close()
+
+
+def test_empty_production_startup_seed_is_idempotent(tmp_path) -> None:
+    """An empty database gets one catalogue and a second startup adds nothing."""
+    engine = create_engine("sqlite:///" + str(tmp_path / "startup_seed.db").replace("\\", "/"))
+    Base.metadata.create_all(bind=engine)
+    test_session = sessionmaker(bind=engine)
+    db = test_session()
+    try:
+        inserted = seed_if_empty(db, "ProductionTestPassword123!")
+        first_count = db.query(Product).count()
+        repeated = seed_if_empty(db, "ProductionTestPassword123!")
+        second_count = db.query(Product).count()
+        assert inserted == first_count
+        assert inserted > 0
+        assert repeated == 0
+        assert second_count == first_count
+    finally:
+        db.close()
+        engine.dispose()
 
 
 def test_staff_cannot_change_price(client: TestClient, staff_token: str) -> None:

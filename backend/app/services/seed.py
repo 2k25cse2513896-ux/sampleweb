@@ -5,10 +5,12 @@ Prices and stock are demo data. Brand names are plain text only.
 """
 
 import json
+import logging
 import re
+import time
 from threading import Lock
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -36,6 +38,8 @@ from app.models.entities import (
     Warranty,
 )
 from app.services.settings_service import ensure_defaults
+
+logger = logging.getLogger(__name__)
 
 BRANDS: List[Tuple[str, str]] = [
     ("boAt", "boat"),
@@ -109,6 +113,8 @@ def product_image_url(category_slug: str, specs_json: str) -> str:
 
 LOCAL_ADMIN_PASSWORD = "Admin@123"
 POSTGRES_SEED_LOCK_KEY = 675921804
+POSTGRES_SEED_LOCK_WAIT_SECONDS = 10
+POSTGRES_STATEMENT_TIMEOUT_MS = 30000
 LOCAL_SEED_LOCK = Lock()
 
 
@@ -122,35 +128,66 @@ def _resolve_admin_password(value: str | None) -> str:
     return LOCAL_ADMIN_PASSWORD
 
 
-def _seed_if_products_empty(db: Session, admin_password: str) -> None:
+def _safe_error(value: Exception) -> str:
+    """Keep secrets and connection strings out of seed error logs."""
+    settings = get_settings()
+    message = str(value).replace(settings.database_url, "[database-url-redacted]")
+    return message.replace("postgresql+psycopg://", "postgresql+psycopg://[redacted]")
+
+
+def _seed_if_products_empty(db: Session, admin_password: str) -> int:
     """Recheck after locking so only the first starter can seed the database."""
     existing = db.query(Product.id).first()
     if existing is not None:
-        return
-    run_seed(db, admin_password)
+        logger.info("seed: skipped because products already exist")
+        return 0
+    count = run_seed(db, admin_password)
+    logger.info("seed: inserted %s products", count)
+    return count
 
 
-def seed_if_empty(db: Session, admin_password: str | None = None) -> None:
-    """Seed once without overwriting data, using a cross-instance Postgres lock."""
-    password = _resolve_admin_password(admin_password)
-    bind = db.get_bind()
-    if bind.dialect.name != "postgresql":
-        with LOCAL_SEED_LOCK:
-            _seed_if_products_empty(db, password)
-        return
-
+def seed_if_empty(db: Session, admin_password: str | None = None) -> Optional[int]:
+    """Seed once without overwriting data, using a bounded cross-instance lock."""
+    logger.info("seed: checking")
     lock_acquired = False
     try:
+        password = _resolve_admin_password(admin_password)
+        bind = db.get_bind()
+        if bind.dialect.name != "postgresql":
+            with LOCAL_SEED_LOCK:
+                return _seed_if_products_empty(db, password)
+
         db.rollback()
-        db.execute(text("SELECT pg_advisory_lock(:lock_key)"), {"lock_key": POSTGRES_SEED_LOCK_KEY})
+        db.execute(text(f"SET statement_timeout = '{POSTGRES_STATEMENT_TIMEOUT_MS}ms'"))
+        db.execute(text("SET lock_timeout = '5000ms'"))
         db.commit()
-        lock_acquired = True
-        _seed_if_products_empty(db, password)
+        deadline = time.monotonic() + POSTGRES_SEED_LOCK_WAIT_SECONDS
+        while time.monotonic() < deadline:
+            acquired = db.execute(
+                text("SELECT pg_try_advisory_lock(:lock_key)"),
+                {"lock_key": POSTGRES_SEED_LOCK_KEY},
+            ).scalar()
+            db.commit()
+            if acquired:
+                lock_acquired = True
+                break
+            time.sleep(0.5)
+        if lock_acquired is False:
+            logger.info("seed: skipped because seed lock is held")
+            return None
+        return _seed_if_products_empty(db, password)
+    except Exception as exc:
+        db.rollback()
+        logger.error("seed: FAILED %s", _safe_error(exc))
+        raise
     finally:
         if lock_acquired:
-            db.rollback()
-            db.execute(text("SELECT pg_advisory_unlock(:lock_key)"), {"lock_key": POSTGRES_SEED_LOCK_KEY})
-            db.commit()
+            try:
+                db.rollback()
+                db.execute(text("SELECT pg_advisory_unlock(:lock_key)"), {"lock_key": POSTGRES_SEED_LOCK_KEY})
+                db.commit()
+            except Exception as exc:
+                logger.error("seed: FAILED to release seed lock: %s", _safe_error(exc))
 
 
 def normalize_catalogue(db: Session) -> None:
@@ -174,7 +211,7 @@ def normalize_catalogue(db: Session) -> None:
         db.commit()
 
 
-def run_seed(db: Session, admin_password: str | None = None) -> None:
+def run_seed(db: Session, admin_password: str | None = None) -> int:
     """Wipe is not done here. Caller (reset) must clear tables first."""
     ensure_defaults(db)
     password = _resolve_admin_password(admin_password)
@@ -199,26 +236,27 @@ def run_seed(db: Session, admin_password: str | None = None) -> None:
 
     cat_map: Dict[str, Category] = {}
     for name, slug, order in CATEGORIES:
-        row = Category(name=name, slug=slug, sort_order=order)
-        db.add(row)
-        db.flush()
-        cat_map[slug] = row
+        cat_map[slug] = Category(name=name, slug=slug, sort_order=order)
+    db.add_all(list(cat_map.values()))
+    db.flush()
 
     brand_map: Dict[str, Brand] = {}
     for name, slug in BRANDS:
-        row = Brand(name=name, slug=slug)
-        db.add(row)
-        db.flush()
-        brand_map[slug] = row
+        brand_map[slug] = Brand(name=name, slug=slug)
+    db.add_all(list(brand_map.values()))
+    db.flush()
 
     products = _build_products(cat_map, brand_map)
+    db.add_all([product for product, _opening_qty in products])
+    db.flush()
+    category_slugs = {category.id: slug for slug, category in cat_map.items()}
+    images: List[ProductImage] = []
+    movements: List[StockMovement] = []
     for product, opening_qty in products:
-        db.add(product)
-        db.flush()
-        category_slug = next(slug for slug, category in cat_map.items() if category.id == product.category_id)
-        db.add(ProductImage(product_id=product.id, url=product_image_url(category_slug, product.specs_json), sort_order=0))
+        category_slug = category_slugs[product.category_id]
+        images.append(ProductImage(product_id=product.id, url=product_image_url(category_slug, product.specs_json), sort_order=0))
         if opening_qty > 0:
-            db.add(
+            movements.append(
                 StockMovement(
                     product_id=product.id,
                     change_qty=opening_qty,
@@ -228,16 +266,18 @@ def run_seed(db: Session, admin_password: str | None = None) -> None:
                 )
             )
             product.stock_qty = opening_qty
+    db.add_all(images)
+    db.add_all(movements)
 
     phones = _build_phones()
-    for phone in phones:
-        db.add(phone)
+    db.add_all(phones)
     db.flush()
 
     _map_compatibility(db)
     _customers_orders_extras(db, admin.id)
     _rebuild_fts(db)
     db.commit()
+    return len(products)
 
 
 def _build_products(cat_map: Dict[str, Category], brand_map: Dict[str, Brand]) -> List[Tuple[Product, int]]:
@@ -447,12 +487,9 @@ def _customers_orders_extras(db: Session, admin_id: int) -> None:
         ("Pooja Gupta", "9876500004"),
         ("Imran Khan", "9876500005"),
     ]
-    customers: List[Customer] = []
-    for name, phone in names:
-        row = Customer(name=name, phone=phone, email=None, loyalty_points=50)
-        db.add(row)
-        db.flush()
-        customers.append(row)
+    customers = [Customer(name=name, phone=phone, email=None, loyalty_points=50) for name, phone in names]
+    db.add_all(customers)
+    db.flush()
 
     products = db.query(Product).filter(Product.stock_qty > 0).all()
     statuses = [
@@ -472,6 +509,9 @@ def _customers_orders_extras(db: Session, admin_id: int) -> None:
         "ready_for_pickup",
         "confirmed",
     ]
+    orders: List[Order] = []
+    order_items: List[OrderItem] = []
+    order_events: List[OrderEvent] = []
     for i in range(0, 15):
         product = products[i]
         qty = 1
@@ -498,35 +538,32 @@ def _customers_orders_extras(db: Session, admin_id: int) -> None:
             address="Sagar Market pickup",
             note="Demo order",
         )
-        db.add(order)
-        db.flush()
-        db.add(
+        orders.append(order)
+    db.add_all(orders)
+    db.flush()
+    for i, order in enumerate(orders):
+        product = products[i]
+        status = order.status
+        order_items.append(
             OrderItem(
                 order_id=order.id,
                 product_id=product.id,
                 name_snapshot=product.name,
-                price_snapshot=price,
-                qty=qty,
+                price_snapshot=product.price,
+                qty=1,
             )
         )
-        db.add(OrderEvent(order_id=order.id, status=status, note="Seeded timeline"))
+        order_events.append(OrderEvent(order_id=order.id, status=status, note="Seeded timeline"))
+    db.add_all(order_items)
+    db.add_all(order_events)
 
     issues = ["charging port", "speaker crackle", "screen glass", "not turning on"]
+    repairs: List[RepairRequest] = []
     for i in range(0, 4):
-        repair = RepairRequest(
-            ticket_no="RP" + str(2001 + i),
-            customer_id=customers[i].id,
-            device_brand="Redmi",
-            device_model="Note 13",
-            issue_type=issues[i],
-            description="Walk-in demo ticket.",
-            preferred_slot="afternoon",
-            status="booked",
-            estimate_amount=499,
-        )
-        db.add(repair)
-        db.flush()
-        db.add(RepairEvent(repair_id=repair.id, status="booked", note="Booked from seed"))
+        repairs.append(RepairRequest(ticket_no="RP" + str(2001 + i), customer_id=customers[i].id, device_brand="Redmi", device_model="Note 13", issue_type=issues[i], description="Walk-in demo ticket.", preferred_slot="afternoon", status="booked", estimate_amount=499))
+    db.add_all(repairs)
+    db.flush()
+    db.add_all([RepairEvent(repair_id=repair.id, status="booked", note="Booked from seed") for repair in repairs])
 
     watch = db.query(Product).filter(Product.sku == "GD-001").one()
     buds = db.query(Product).filter(Product.sku == "EB-001").one()
