@@ -634,6 +634,8 @@ def _customers_orders_extras(db: Session, admin_id: int) -> None:
 
 def _rebuild_fts(db: Session) -> None:
     try:
+        if db.get_bind().dialect.name != "sqlite":
+            return
         db.execute(text("INSERT INTO products_fts(products_fts) VALUES('rebuild')"))
     except Exception:
         # FTS5 may be missing on some SQLite builds. LIKE search still works.
