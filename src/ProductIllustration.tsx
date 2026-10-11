@@ -1,0 +1,32 @@
+type ProductIllustrationProps = { category?: string; compact?: boolean };
+
+function illustrationType(category: string): string {
+  const value = category.toLowerCase();
+  if (value.includes("earbud")) return "earbuds";
+  if (value.includes("headphone")) return "headphones";
+  if (value.includes("neckband")) return "neckband";
+  if (value.includes("watch")) return "watch";
+  if (value.includes("speaker")) return "speaker";
+  if (value.includes("power")) return "power";
+  if (value.includes("charger")) return "charger";
+  if (value.includes("cable")) return "cable";
+  if (value.includes("pendrive") || value.includes("storage") || value.includes("memory")) return "pendrive";
+  if (value.includes("cover") || value.includes("glass") || value.includes("protection") || value.includes("accessor")) return "cover";
+  return "gadget";
+}
+
+export default function ProductIllustration({ category = "gadget", compact = false }: ProductIllustrationProps) {
+  const type = illustrationType(category);
+  const size = compact ? "112 84" : "220 160";
+  if (type === "earbuds") return <svg className="product-illustration" viewBox="0 0 220 160" width={size.split(" ")[0]} height={size.split(" ")[1]} role="img" aria-label="Wireless earbuds illustration"><rect x="61" y="78" width="98" height="42" rx="21" fill="#0B0B0D"/><path d="M80 74c-12-6-19-19-14-31 4-10 16-14 24-8 6 5 7 13 4 21l-5 13c-2 5-5 7-9 5Z" fill="#2D5BFF"/><path d="M140 74c12-6 19-19 14-31-4-10-16-14-24-8-6 5-7 13-4 21l5 13c2 5 5 7 9 5Z" fill="#19B37D"/><circle cx="85" cy="50" r="4" fill="#EEF3F2"/><circle cx="135" cy="50" r="4" fill="#EEF3F2"/></svg>;
+  if (type === "headphones") return <svg className="product-illustration" viewBox="0 0 220 160" width={size.split(" ")[0]} height={size.split(" ")[1]} role="img" aria-label="Headphones illustration"><path d="M52 94V78c0-34 26-55 58-55s58 21 58 55v16" fill="none" stroke="#0B0B0D" strokeWidth="13" strokeLinecap="round"/><rect x="39" y="83" width="31" height="48" rx="14" fill="#2D5BFF"/><rect x="150" y="83" width="31" height="48" rx="14" fill="#19B37D"/><path d="M70 112c10 18 25 26 40 26s30-8 40-26" fill="none" stroke="#0B0B0D" strokeWidth="8" strokeLinecap="round"/></svg>;
+  if (type === "neckband") return <svg className="product-illustration" viewBox="0 0 220 160" width={size.split(" ")[0]} height={size.split(" ")[1]} role="img" aria-label="Neckband illustration"><path d="M49 63c2 45 28 70 61 70s59-25 61-70" fill="none" stroke="#0B0B0D" strokeWidth="11" strokeLinecap="round"/><rect x="38" y="53" width="29" height="38" rx="14" fill="#2D5BFF"/><rect x="153" y="53" width="29" height="38" rx="14" fill="#19B37D"/><circle cx="52" cy="48" r="9" fill="#0B0B0D"/><circle cx="168" cy="48" r="9" fill="#0B0B0D"/></svg>;
+  if (type === "watch") return <svg className="product-illustration" viewBox="0 0 220 160" width={size.split(" ")[0]} height={size.split(" ")[1]} role="img" aria-label="Smartwatch illustration"><rect x="92" y="12" width="36" height="136" rx="18" fill="#0B0B0D"/><rect x="58" y="35" width="104" height="90" rx="25" fill="#2D5BFF"/><rect x="69" y="46" width="82" height="68" rx="17" fill="#EEF3F2"/><circle cx="110" cy="80" r="17" fill="#19B37D"/><path d="M110 80V65M110 80l12 8" stroke="#0B0B0D" strokeWidth="4" strokeLinecap="round"/></svg>;
+  if (type === "speaker") return <svg className="product-illustration" viewBox="0 0 220 160" width={size.split(" ")[0]} height={size.split(" ")[1]} role="img" aria-label="Speaker illustration"><rect x="55" y="25" width="110" height="110" rx="24" fill="#0B0B0D"/><circle cx="110" cy="62" r="20" fill="#2D5BFF"/><circle cx="110" cy="107" r="28" fill="#19B37D"/><circle cx="110" cy="107" r="12" fill="#0B0B0D"/></svg>;
+  if (type === "power") return <svg className="product-illustration" viewBox="0 0 220 160" width={size.split(" ")[0]} height={size.split(" ")[1]} role="img" aria-label="Power bank illustration"><rect x="60" y="27" width="100" height="106" rx="19" fill="#0B0B0D"/><rect x="73" y="42" width="74" height="58" rx="10" fill="#EEF3F2"/><rect x="88" y="111" width="44" height="7" rx="3.5" fill="#2D5BFF"/><circle cx="93" cy="69" r="8" fill="#19B37D"/></svg>;
+  if (type === "charger") return <svg className="product-illustration" viewBox="0 0 220 160" width={size.split(" ")[0]} height={size.split(" ")[1]} role="img" aria-label="Charger illustration"><rect x="74" y="40" width="72" height="76" rx="14" fill="#EEF3F2" stroke="#0B0B0D" strokeWidth="8"/><path d="M91 40V22M129 40V22" stroke="#0B0B0D" strokeWidth="8" strokeLinecap="round"/><rect x="101" y="65" width="18" height="25" rx="4" fill="#2D5BFF"/><path d="M110 90v25h34" fill="none" stroke="#19B37D" strokeWidth="7" strokeLinecap="round"/></svg>;
+  if (type === "cable") return <svg className="product-illustration" viewBox="0 0 220 160" width={size.split(" ")[0]} height={size.split(" ")[1]} role="img" aria-label="Charging cable illustration"><path d="M57 42c0 68 106 8 106 76 0 18-13 30-30 30" fill="none" stroke="#0B0B0D" strokeWidth="11" strokeLinecap="round"/><rect x="44" y="25" width="28" height="35" rx="7" fill="#2D5BFF"/><rect x="133" y="131" width="31" height="14" rx="5" fill="#19B37D"/></svg>;
+  if (type === "pendrive") return <svg className="product-illustration" viewBox="0 0 220 160" width={size.split(" ")[0]} height={size.split(" ")[1]} role="img" aria-label="Storage drive illustration"><rect x="68" y="35" width="84" height="90" rx="15" fill="#0B0B0D"/><rect x="83" y="49" width="54" height="46" rx="8" fill="#2D5BFF"/><rect x="91" y="105" width="38" height="8" rx="4" fill="#19B37D"/><path d="M91 35V22M129 35V22" stroke="#0B0B0D" strokeWidth="7" strokeLinecap="round"/></svg>;
+  if (type === "cover") return <svg className="product-illustration" viewBox="0 0 220 160" width={size.split(" ")[0]} height={size.split(" ")[1]} role="img" aria-label="Phone protection illustration"><rect x="72" y="14" width="76" height="132" rx="16" fill="#0B0B0D"/><rect x="81" y="25" width="58" height="110" rx="10" fill="#EEF3F2"/><circle cx="110" cy="126" r="3" fill="#2D5BFF"/><path d="M93 67h34M93 79h24" stroke="#19B37D" strokeWidth="7" strokeLinecap="round"/></svg>;
+  return <svg className="product-illustration" viewBox="0 0 220 160" width={size.split(" ")[0]} height={size.split(" ")[1]} role="img" aria-label="Gadget illustration"><rect x="55" y="32" width="110" height="96" rx="22" fill="#0B0B0D"/><circle cx="88" cy="80" r="21" fill="#2D5BFF"/><circle cx="137" cy="80" r="21" fill="#19B37D"/><path d="M88 80h49" stroke="#EEF3F2" strokeWidth="7" strokeLinecap="round"/></svg>;
+}

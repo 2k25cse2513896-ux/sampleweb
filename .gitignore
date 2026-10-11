@@ -1,0 +1,17 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.env
+shop.db
+shop.db-wal
+shop.db-shm
+backend/uploads/
+uploads/
+node_modules/
+dist/
+.DS_Store
+*.egg-info/
+.ruff_cache/
