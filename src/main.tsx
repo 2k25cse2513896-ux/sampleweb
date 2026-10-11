@@ -268,7 +268,7 @@ function Shop() {
       <div className="shop-results">
         {activeFilters.length > 0 && <div className="active-filters" aria-label="Active filters">{activeFilters.map((filter) => <button key={filter} onClick={clearFilters}>{filter} ×</button>)}</div>}
         {query.isLoading && <div className="skeleton-grid"><span/><span/><span/><span/></div>}
-        {query.isError && <div className="notice error">Could not load products. Check that the backend is running on port 8000.</div>}
+        {query.isError && <div className="notice error">Could not load products. Please try again in a moment.</div>}
         {!query.isLoading && !query.isError && query.data?.total === 0 && <div className="empty"><h3>No exact match yet.</h3><p>Try a broader word or ask the assistant for a recommendation.</p></div>}
         <div className="product-grid">{query.data?.items.map((product) => <ProductCard key={product.id} product={product}/>)}</div>
       </div>
