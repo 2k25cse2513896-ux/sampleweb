@@ -5,6 +5,10 @@ from io import BytesIO
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from app.core.db import SessionLocal
+from app.models.entities import Product
+from app.services.seed import seed_if_empty
+
 
 def test_lists_seeded_catalogue(client: TestClient) -> None:
     cats = client.get("/api/categories")
@@ -26,6 +30,18 @@ def test_search_earbuds(client: TestClient) -> None:
     response = client.get("/api/products", params={"q": "earbuds"})
     assert response.status_code == 200
     assert response.json()["total"] > 0
+
+
+def test_startup_seed_is_idempotent(client: TestClient) -> None:
+    db = SessionLocal()
+    try:
+        before = db.query(Product).count()
+        seed_if_empty(db)
+        after = db.query(Product).count()
+        assert before > 0
+        assert after == before
+    finally:
+        db.close()
 
 
 def test_staff_cannot_change_price(client: TestClient, staff_token: str) -> None:

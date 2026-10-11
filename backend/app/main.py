@@ -38,8 +38,9 @@ async def lifespan(_app: FastAPI):
     init_db()
     db = SessionLocal()
     try:
+        if app_settings.seed_on_startup:
+            seed_if_empty(db, app_settings.admin_password)
         if app_settings.demo_mode:
-            seed_if_empty(db)
             normalize_catalogue(db)
     finally:
         db.close()

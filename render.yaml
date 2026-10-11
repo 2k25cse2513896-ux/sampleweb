@@ -13,8 +13,12 @@ services:
         value: production
       - key: DEMO_MODE
         value: "false"
+      - key: SEED_ON_STARTUP
+        value: "true"
       - key: SECRET_KEY
         generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false
       - key: DATABASE_URL
         sync: false
       - key: CORS_ORIGINS

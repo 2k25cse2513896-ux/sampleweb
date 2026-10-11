@@ -38,12 +38,14 @@ Do not commit `.env`, database passwords, API keys, or customer data. The reposi
 4. When asked for secret values, enter:
    - `DATABASE_URL`: the Neon connection string.
    - `CORS_ORIGINS`: temporarily use `https://example.com`; replace it after the frontend URL is known.
-5. Wait for the deploy, then open:
+   - `ADMIN_PASSWORD`: a new private password with at least 12 characters. This is used only when the empty production database receives its one-time seeded admin.
+5. Keep `SEED_ON_STARTUP=true` for the first deploy. Set it to `false` only if you want to disable the empty-database seed completely.
+6. Wait for the deploy, then open:
    - `https://YOUR-API.onrender.com/api/health`
    - `https://YOUR-API.onrender.com/api/ready`
-6. Both endpoints must respond successfully before deploying the frontend.
+7. Both endpoints must respond successfully before deploying the frontend.
 
-The Render start command runs Alembic migrations before Uvicorn starts. `DEMO_MODE=false` prevents demo users and demo data from being created in production.
+The Render start command runs Alembic migrations before Uvicorn starts. With `SEED_ON_STARTUP=true`, startup checks the `products` table after migrations and seeds only when it is empty. A PostgreSQL advisory lock makes simultaneous instance starts safe; an existing catalogue is never wiped or overwritten. `DEMO_MODE=false` still prevents the old demo-only normalization path from changing existing production rows.
 
 ## 4. Deploy the frontend on Vercel
 

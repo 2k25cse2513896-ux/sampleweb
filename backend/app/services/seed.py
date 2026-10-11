@@ -6,6 +6,7 @@ Prices and stock are demo data. Brand names are plain text only.
 
 import json
 import re
+from threading import Lock
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Tuple
 
@@ -13,6 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
+from app.core.config import get_settings
 from app.models.entities import (
     Brand,
     Category,
@@ -105,11 +107,50 @@ def product_image_url(category_slug: str, specs_json: str) -> str:
     return PRODUCT_IMAGE_URLS.get(product_type, PRODUCT_IMAGE_URLS.get(category_slug, PRODUCT_IMAGE_URLS["gadgets"]))
 
 
-def seed_if_empty(db: Session) -> None:
-    existing = db.query(User).first()
+LOCAL_ADMIN_PASSWORD = "Admin@123"
+POSTGRES_SEED_LOCK_KEY = 675921804
+LOCAL_SEED_LOCK = Lock()
+
+
+def _resolve_admin_password(value: str | None) -> str:
+    """Use the environment password in production and a local-only default in development."""
+    settings = get_settings()
+    if value is not None and value != "":
+        return value
+    if settings.environment.lower() == "production":
+        raise RuntimeError("ADMIN_PASSWORD must be set when SEED_ON_STARTUP is enabled in production.")
+    return LOCAL_ADMIN_PASSWORD
+
+
+def _seed_if_products_empty(db: Session, admin_password: str) -> None:
+    """Recheck after locking so only the first starter can seed the database."""
+    existing = db.query(Product.id).first()
     if existing is not None:
         return
-    run_seed(db)
+    run_seed(db, admin_password)
+
+
+def seed_if_empty(db: Session, admin_password: str | None = None) -> None:
+    """Seed once without overwriting data, using a cross-instance Postgres lock."""
+    password = _resolve_admin_password(admin_password)
+    bind = db.get_bind()
+    if bind.dialect.name != "postgresql":
+        with LOCAL_SEED_LOCK:
+            _seed_if_products_empty(db, password)
+        return
+
+    lock_acquired = False
+    try:
+        db.rollback()
+        db.execute(text("SELECT pg_advisory_lock(:lock_key)"), {"lock_key": POSTGRES_SEED_LOCK_KEY})
+        db.commit()
+        lock_acquired = True
+        _seed_if_products_empty(db, password)
+    finally:
+        if lock_acquired:
+            db.rollback()
+            db.execute(text("SELECT pg_advisory_unlock(:lock_key)"), {"lock_key": POSTGRES_SEED_LOCK_KEY})
+            db.commit()
 
 
 def normalize_catalogue(db: Session) -> None:
@@ -133,14 +174,15 @@ def normalize_catalogue(db: Session) -> None:
         db.commit()
 
 
-def run_seed(db: Session) -> None:
+def run_seed(db: Session, admin_password: str | None = None) -> None:
     """Wipe is not done here. Caller (reset) must clear tables first."""
     ensure_defaults(db)
+    password = _resolve_admin_password(admin_password)
 
     admin = User(
         name="Demo Admin",
         email="admin@demo.shop",
-        password_hash=hash_password("Admin@123"),
+        password_hash=hash_password(password),
         role="admin",
         is_active=True,
     )
